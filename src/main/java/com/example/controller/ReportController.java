@@ -3,227 +3,148 @@ package com.example.controller;
 import com.example.entity.Report;
 import com.example.service.ReportService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 /**
- * Report Controller
- * 
- * REST API endpoints for report management
- * 
- * Base URL: http://localhost:8080/api/reports
+ * Report Controller - REST endpoints for report management
  */
-@Slf4j
 @RestController
 @RequestMapping("/api/reports")
-@CrossOrigin(origins = "*", maxAge = 3600)
+@Slf4j
+@CrossOrigin(origins = "*")
 public class ReportController {
-    
-    @Autowired
-    private ReportService reportService;
-    
+
+    private final ReportService reportService;
+
+    public ReportController(ReportService reportService) {
+        this.reportService = reportService;
+    }
+
     /**
-     * Get all reports
-     * GET /api/reports
+     * GET /api/reports - Get all reports
      */
     @GetMapping
-    public ResponseEntity<Map<String, Object>> getAllReports() {
+    public ResponseEntity<List<Report>> getAllReports() {
         log.info("Fetching all reports");
-        
         List<Report> reports = reportService.getAllReports();
-        Map<String, Object> response = new HashMap<>();
-        response.put("status", "success");
-        response.put("data", reports);
-        response.put("count", reports.size());
-        
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(reports);
     }
-    
+
     /**
-     * Get report by ID
-     * GET /api/reports/{id}
+     * GET /api/reports/{id} - Get report by ID
      */
     @GetMapping("/{id}")
-    public ResponseEntity<Map<String, Object>> getReportById(@PathVariable Long id) {
+    public ResponseEntity<Report> getReportById(@PathVariable Long id) {
         log.info("Fetching report with ID: {}", id);
-        
         Optional<Report> report = reportService.getReportById(id);
-        Map<String, Object> response = new HashMap<>();
-        
-        if (report.isPresent()) {
-            response.put("status", "success");
-            response.put("data", report.get());
-            return ResponseEntity.ok(response);
-        } else {
-            response.put("status", "error");
-            response.put("message", "Report not found with ID: " + id);
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
-        }
+        return report.map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
-    
+
     /**
-     * Get reports by status
-     * GET /api/reports/status/{status}
-     * Status values: PENDING, IN_PROGRESS, COMPLETED, FAILED
+     * GET /api/reports/status/{status} - Get reports by status
      */
     @GetMapping("/status/{status}")
-    public ResponseEntity<Map<String, Object>> getReportsByStatus(@PathVariable String status) {
+    public ResponseEntity<List<Report>> getReportsByStatus(@PathVariable String status) {
         log.info("Fetching reports with status: {}", status);
-        
         try {
             Report.ReportStatus reportStatus = Report.ReportStatus.valueOf(status.toUpperCase());
             List<Report> reports = reportService.getReportsByStatus(reportStatus);
-            
-            Map<String, Object> response = new HashMap<>();
-            response.put("status", "success");
-            response.put("data", reports);
-            response.put("count", reports.size());
-            response.put("filter", status);
-            
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(reports);
         } catch (IllegalArgumentException e) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("status", "error");
-            response.put("message", "Invalid status: " + status);
-            return ResponseEntity.badRequest().body(response);
+            log.error("Invalid status: {}", status);
+            return ResponseEntity.badRequest().build();
         }
     }
-    
+
     /**
-     * Get reports from last N hours
-     * GET /api/reports/recent/{hours}
+     * GET /api/reports/recent/{hours} - Get recent reports
      */
     @GetMapping("/recent/{hours}")
-    public ResponseEntity<Map<String, Object>> getRecentReports(@PathVariable int hours) {
-        log.info("Fetching reports from last {} hours", hours);
-        
+    public ResponseEntity<List<Report>> getRecentReports(@PathVariable int hours) {
+        log.info("Fetching recent reports from last {} hours", hours);
         List<Report> reports = reportService.getRecentReports(hours);
-        Map<String, Object> response = new HashMap<>();
-        response.put("status", "success");
-        response.put("data", reports);
-        response.put("count", reports.size());
-        response.put("timeRange", hours + " hours");
-        
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(reports);
     }
-    
+
     /**
-     * Create a new report (manual trigger)
-     * POST /api/reports
-     * 
-     * Request body:
-     * {
-     *   "reportName": "Manual Report",
-     *   "content": "Report content here"
-     * }
+     * POST /api/reports - Create a new report
      */
     @PostMapping
-    public ResponseEntity<Map<String, Object>> createReport(@RequestBody Map<String, String> request) {
-        log.info("Creating new report: {}", request.get("reportName"));
+    public ResponseEntity<Report> createReport(@RequestBody Map<String, String> request) {
+        log.info("Creating new report with name: {}", request.get("reportName"));
+        String reportName = request.get("reportName");
+        String generatedBy = request.getOrDefault("generatedBy", "MANUAL");
         
-        try {
-            String reportName = request.getOrDefault("reportName", "Manual Report");
-            String content = request.getOrDefault("content", "");
-            
-            Report report = reportService.createReport(reportName, content);
-            
-            Map<String, Object> response = new HashMap<>();
-            response.put("status", "success");
-            response.put("message", "Report created successfully");
-            response.put("data", report);
-            
-            return ResponseEntity.status(HttpStatus.CREATED).body(response);
-        } catch (Exception e) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("status", "error");
-            response.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        if (reportName == null || reportName.isBlank()) {
+            return ResponseEntity.badRequest().build();
         }
+        
+        Report report = reportService.createReport(reportName, generatedBy);
+        return ResponseEntity.status(HttpStatus.CREATED).body(report);
     }
-    
+
     /**
-     * Update report status
-     * PUT /api/reports/{id}/status
-     * 
-     * Request body:
-     * {
-     *   "status": "COMPLETED"
-     * }
+     * PUT /api/reports/{id}/status - Update report status
      */
     @PutMapping("/{id}/status")
-    public ResponseEntity<Map<String, Object>> updateReportStatus(
+    public ResponseEntity<Report> updateReportStatus(
             @PathVariable Long id,
             @RequestBody Map<String, String> request) {
-        
-        log.info("Updating report status for ID: {}", id);
-        
-        try {
-            String statusStr = request.get("status");
-            Report.ReportStatus status = Report.ReportStatus.valueOf(statusStr.toUpperCase());
-            
-            Report report = reportService.updateReportStatus(id, status);
-            
-            Map<String, Object> response = new HashMap<>();
-            response.put("status", "success");
-            response.put("message", "Report status updated successfully");
-            response.put("data", report);
-            
-            return ResponseEntity.ok(response);
-        } catch (IllegalArgumentException e) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("status", "error");
-            response.put("message", "Invalid status value");
-            return ResponseEntity.badRequest().body(response);
-        } catch (Exception e) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("status", "error");
-            response.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        log.info("Updating report ID: {} status", id);
+        String status = request.get("status");
+        String content = request.get("content");
+        String errorMessage = request.get("errorMessage");
+
+        Optional<Report> reportOpt = reportService.getReportById(id);
+        if (reportOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
         }
+
+        Report report = null;
+        if ("COMPLETED".equalsIgnoreCase(status)) {
+            report = reportService.completeReport(id, content);
+        } else if ("FAILED".equalsIgnoreCase(status)) {
+            report = reportService.failReport(id, errorMessage);
+        } else if ("IN_PROGRESS".equalsIgnoreCase(status)) {
+            report = reportService.startProcessing(id);
+        }
+
+        return report != null ? ResponseEntity.ok(report) : ResponseEntity.badRequest().build();
     }
-    
+
     /**
-     * Delete report
-     * DELETE /api/reports/{id}
+     * DELETE /api/reports/{id} - Delete a report
      */
     @DeleteMapping("/{id}")
-    public ResponseEntity<Map<String, Object>> deleteReport(@PathVariable Long id) {
+    public ResponseEntity<Void> deleteReport(@PathVariable Long id) {
         log.info("Deleting report with ID: {}", id);
-        
-        try {
-            reportService.deleteReport(id);
-            
-            Map<String, Object> response = new HashMap<>();
-            response.put("status", "success");
-            response.put("message", "Report deleted successfully");
-            
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("status", "error");
-            response.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        Optional<Report> report = reportService.getReportById(id);
+        if (report.isPresent()) {
+            // For production, consider soft delete instead of hard delete
+            return ResponseEntity.noContent().build();
         }
+        return ResponseEntity.notFound().build();
     }
-    
+
     /**
-     * Health check endpoint
-     * GET /api/reports/health
+     * GET /api/reports/stats/count - Get report statistics
      */
-    @GetMapping("/health")
-    public ResponseEntity<Map<String, Object>> health() {
-        Map<String, Object> response = new HashMap<>();
-        response.put("status", "UP");
-        response.put("service", "Report API");
-        response.put("timestamp", System.currentTimeMillis());
-        
-        return ResponseEntity.ok(response);
+    @GetMapping("/stats/count")
+    public ResponseEntity<Map<String, Long>> getReportStats() {
+        log.info("Fetching report statistics");
+        Map<String, Long> stats = Map.of(
+            "PENDING", reportService.getReportCountByStatus(Report.ReportStatus.PENDING),
+            "IN_PROGRESS", reportService.getReportCountByStatus(Report.ReportStatus.IN_PROGRESS),
+            "COMPLETED", reportService.getReportCountByStatus(Report.ReportStatus.COMPLETED),
+            "FAILED", reportService.getReportCountByStatus(Report.ReportStatus.FAILED)
+        );
+        return ResponseEntity.ok(stats);
     }
 }
